@@ -1,8 +1,16 @@
-# InInAuto 0.3: from the action to renormalised numbers
+# InInAuto 0.3.1: from the action to renormalised numbers
 
 InInAuto takes the covariant action of a conformally coupled real scalar with a $\lambda\Phi^4/24$ term and returns the
 **renormalised in-in energy density** $\langle\rho\rangle$ through $O(\lambda h^2)$, as numbers, for scalar and tensor
 metric perturbations. It also still produces the exact symbolic Wick integrands of version 0.2.
+
+## What changed in 0.3.1
+
+Symbolic output now renders in physics notation. `sympy.latex(...)`, Jupyter display and `sympy.pprint` show
+$(\nabla\phi)^2$, $\phi'$, $\psi'$, $\nabla\psi\cdot\nabla\phi$, $\epsilon$, $M^2(\tau)$, $h_{ij}h_{ij}$, ... instead of
+`grad_phi_squared`, `v`, `psi_t`, `eps`, `M_2`. The action blocks also render properly: `KIN`, `PHI2`, `RPHI2` and
+`PHI4` show as $(\nabla\Phi)^2$, $\Phi^2$, $R\Phi^2$ and $\Phi^4$. The code names, `str()` output and stored results
+are unchanged.
 
 ## What changed from 0.2
 

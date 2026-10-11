@@ -3,7 +3,7 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 [project]
 name = "ininauto-qft"
-version = "0.3.0"
+version = "0.3.1"
 description = "Action-to-number in-in solver: symbolic derivation, verified kernels, renormalised energy density"
 requires-python = ">=3.10"
 dependencies = ["sympy>=1.12", "numpy>=1.23"]

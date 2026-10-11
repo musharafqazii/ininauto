@@ -10,8 +10,13 @@ supported.  All signs refer to (-+++).  Do not silently parse arbitrary actions.
 """
 from dataclasses import dataclass
 import sympy as s
+from .symbols import TexSymbol
 
-KIN, PHI2, RPHI2, PHI4 = s.symbols('KIN PHI2 RPHI2 PHI4')
+# action building blocks: code names KIN, PHI2, RPHI2, PHI4; rendered as (nabla Phi)^2, Phi^2, R Phi^2, Phi^4
+KIN = TexSymbol('KIN', tex=r'\left(\nabla\Phi\right)^{2}', uni='(∇Φ)²')
+PHI2 = TexSymbol('PHI2', tex=r'\Phi^{2}', uni='Φ²')
+RPHI2 = TexSymbol('RPHI2', tex=r'R\,\Phi^{2}', uni='RΦ²')
+PHI4 = TexSymbol('PHI4', tex=r'\Phi^{4}', uni='Φ⁴')
 
 @dataclass(frozen=True)
 class ScalarAction:
@@ -22,7 +27,11 @@ class ScalarAction:
 
     @classmethod
     def parse(cls, expression):
-        expression=s.expand(s.sympify(expression))
+        expression=s.sympify(expression, locals={'KIN': KIN, 'PHI2': PHI2, 'RPHI2': RPHI2, 'PHI4': PHI4})
+        # plain Symbols with the building-block names (e.g. from sympy.symbols('KIN ...')) mean the same operators
+        expression=s.expand(expression.xreplace({x: {'KIN': KIN, 'PHI2': PHI2, 'RPHI2': RPHI2, 'PHI4': PHI4}[x.name]
+                                                  for x in expression.free_symbols
+                                                  if x.name in ('KIN', 'PHI2', 'RPHI2', 'PHI4')}))
         k=expression.coeff(KIN)
         m=expression.coeff(PHI2)
         r=expression.coeff(RPHI2)
