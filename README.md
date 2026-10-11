@@ -1,8 +1,36 @@
-# InInAuto 0.4.0: from the action to renormalised numbers
+# InInAuto 0.5.0: from the action to renormalised numbers
 
 InInAuto takes the covariant action of a conformally coupled real scalar with a $\lambda\Phi^4/24$ term and returns the
 **renormalised in-in energy density** $\langle\rho\rangle$ through $O(\lambda h^2)$, as numbers, for scalar and tensor
 metric perturbations. It also still produces the exact symbolic Wick integrands of version 0.2.
+
+## New in 0.5.0: free Majorana field
+
+The Majorana field satisfies $\psi=\psi^c=i\gamma^2\psi^*$ and has action $S_M=\tfrac12 S_{\rm Dirac}$. It uses the
+same tetrad, spin connection and canonical structure as the Dirac field, with $H_M=\tfrac12H_D$ and
+$\rho_M=\tfrac12\rho_D$.
+
+```python
+from ininauto.dirac import MajoranaField, majorana_inin_term
+M = MajoranaField("scalar", order=2)               # or "tensor"
+display(Math(M.clifford(M.H(1))))
+T = majorana_inin_term(M, 0, (1,))                 # explicit Majorana Wick contractions
+display(Math(T.latex()))
+```
+
+The Wick contractions are done explicitly. Writing $\psi^\dagger=\psi^T C^T$, every bilinear becomes a quadratic form in
+$\psi$. Its two-point function is $\langle\psi\psi^T\rangle=\int_p e^{ip(x-y)}P_p(i\gamma^2)^T$, which is nonzero for
+a Majorana field. All perfect matchings of the legs are included, with signs $(-1)^{\rm crossings}$.
+
+**Checks:**
+
+- the Majorana condition holds;
+- the vacuum energy is $-\omega_k$ per momentum, half the Dirac sea;
+- every in-in term through $O(h^2)$, computed this way, equals exactly $\tfrac12$ of the Dirac one, as expected for
+  these C-even (scalar and kinetic) vertices.
+
+The two Wick engines are independent, so this identity tests both. For the slow double insertion,
+`majorana_inin_term(M, 0, (1, 1), method="half_dirac")` gives the same result through the Dirac engine.
 
 ## New in 0.4.0: free Dirac field (`ininauto.dirac`)
 

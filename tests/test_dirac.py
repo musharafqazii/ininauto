@@ -135,3 +135,28 @@ def test_first_order_term_is_compact_and_reduced():
     T = inin_term(D, 0, (1,))
     tex = T.latex()
     assert r"\mathrm{Im}" in tex and "k_{x}" not in tex and "Mag_" not in tex
+
+
+def test_majorana_checks_vacuum_energy_and_half_dirac():
+    from ininauto.dirac import MajoranaField, majorana_inin_term
+    MF = MajoranaField("scalar", 1)
+    for name, ok in MF.checks():
+        assert ok, name
+    # vacuum energy: half the Dirac sea, -omega per momentum
+    T = majorana_inin_term(MF, 0, ())
+    val = T.pieces[0][2] * T.pieces[0][0]
+    Kk, M = sp.symbols("Kk M", positive=True)
+    w = sp.sqrt(Kk**2 + M**2)
+    mag = [s for s in val.free_symbols if isinstance(s, DW.Mag)][0]
+    tt = sp.Symbol("tau", real=True)
+    inst = {DW.uA(mag, tt): sp.sqrt(1 + M / w), DW.uAc(mag, tt): sp.sqrt(1 + M / w),
+            DW.uB(mag, tt): sp.sqrt(1 - M / w), DW.uBc(mag, tt): sp.sqrt(1 - M / w)}
+    k = DW.vec("k")
+    e = val.subs(inst).subs({mag: Kk}).subs(MF.m, 1).subs(sp.Function("a")(tt), M).subs({k[0]: 0, k[1]: 0, k[2]: Kk})
+    assert sp.simplify(e + w) == 0
+    # explicit Majorana Wick (with <psi psi> contractions) = 1/2 Dirac, term by term
+    for args in [(1, ()), (0, (1,))]:
+        TM = majorana_inin_term(MF, *args)
+        TD = inin_term(MF.dirac, *args)
+        for (cm, km, vm), (cd, kd, vd) in zip(TM.pieces, TD.pieces):
+            assert km == kd and sp.expand(cm * vm - cd * vd / 2) == 0
