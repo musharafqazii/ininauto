@@ -16,6 +16,10 @@ from .evaluate import evaluate
 from .bridge import verify_all
 from .wick import (F,S,anti,GaussianState,local,vertex,wick_vev,
                    nested_commutator_vev,latex_result)
+from .portal import (KINH,H2,RH2,H4,H2PHI2,PortalAction,PortalSystem,portal_action,higgs_portal,
+                     portal_inin,portal_diagrams)
 __all__=['evaluate','verify_all','KIN','PHI2','RPHI2','PHI4','ScalarAction','conformal_scalar_action',
          'run','Result','solve','export_completed','FullResult','homogeneous_subtraction','AdiabaticSubtraction','F','S','anti','GaussianState','local','vertex',
-         'wick_vev','nested_commutator_vev','latex_result']
+         'wick_vev','nested_commutator_vev','latex_result',
+         'KINH','H2','RH2','H4','H2PHI2','PortalAction','PortalSystem','portal_action','higgs_portal',
+         'portal_inin','portal_diagrams']

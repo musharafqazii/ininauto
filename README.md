@@ -4,6 +4,30 @@ InInAuto takes the covariant action of a conformally coupled real scalar with a 
 **renormalised in-in energy density** $\langle\rho\rangle$ through $O(\lambda h^2)$, as numbers, for scalar and tensor
 metric perturbations. It also still produces the exact symbolic Wick integrands of version 0.2.
 
+## New in 0.6.0: Higgs portal (`ininauto.portal`)
+
+Dark conformal scalar Phi plus a Higgs-like scalar h (both xi = 1/6), coupled by V = (lambda_p/4) h^2 Phi^2.
+The only input is the action:
+
+```python
+import sympy as sp
+from ininauto import *
+m, mh, lam, lp = sp.symbols('m m_h lambda lambda_p', real=True)
+S = -KIN/2 - m**2*PHI2/2 - RPHI2/12 - lam*PHI4/24 \
+    -KINH/2 - mh**2*H2/2 - RH2/12 - lp*H2PHI2/4
+sys = higgs_portal(S, 'scalar')        # or 'tensor' (TT); through O(eps^2)
+sys.H[(0,1,0)], sys.rho[(0,1,0)]       # keys (l, p, j): self-coupling, portal, metric order
+for label, res in portal_diagrams(sys, (0,1,0)):   # all O(lambda_p) in-in terms
+    print(label); display(Math(latex_result(res)))
+```
+
+In the conformal frame (phi = a Phi, chi = a h): H_portal = sqrt(-gamma) phi^2 chi^2/4 (times lambda_p) and
+rho_portal = phi^2 chi^2/(4 a^4). Wick contractions use two species (u_k for phi, u^(chi)_k for chi). At flat
+O(lambda_p) the result is the contact term <phi^2><chi^2>/(4a^4) plus the Hartree mass shifts
+Sigma_Phi = (lambda_p/2)<chi^2>, Sigma_chi = (lambda_p/2)<phi^2>. `checks(sys)` verifies H_portal = -L_portal,
+the sqrt(-gamma) factor, rho_portal, and decoupling to the single-field results at lambda_p = 0.
+Double insertions (8 legs) are skipped by default; pass `max_legs=8` (about 2 min each).
+
 ## New in 0.5.0: free Majorana field
 
 The Majorana field satisfies $\psi=\psi^c=i\gamma^2\psi^*$ and has action $S_M=\tfrac12 S_{\rm Dirac}$. It uses the
