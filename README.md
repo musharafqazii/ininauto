@@ -1,8 +1,42 @@
-# InInAuto 0.3.3: from the action to renormalised numbers
+# InInAuto 0.4.0: from the action to renormalised numbers
 
 InInAuto takes the covariant action of a conformally coupled real scalar with a $\lambda\Phi^4/24$ term and returns the
 **renormalised in-in energy density** $\langle\rho\rangle$ through $O(\lambda h^2)$, as numbers, for scalar and tensor
 metric perturbations. It also still produces the exact symbolic Wick integrands of version 0.2.
+
+## New in 0.4.0: free Dirac field (`ininauto.dirac`)
+
+The free Dirac field is handled on the same two metric families: scalar (Newtonian gauge, equal potentials) and
+tensor (TT). Everything is explicit up to $O(h^2)$.
+
+```python
+from ininauto.dirac import DiracField, inin_term
+D = DiracField("scalar", order=2)              # or "tensor"
+display(Math(D.clifford(D.H(1))))              # Psi^dag [ sum c_A Gamma_A ] Psi
+display(Math(D.clifford(D.rho_n(2))))          # comoving energy density a^4 rho at eps^2
+T = inin_term(D, 0, (1,))                      # -i <[rho_0(x), H_1(t1)]>, explicit fermion Wick contractions
+display(Math(T.latex()))
+```
+
+The calculation proceeds in these steps:
+
+1. **Geometry.** The tetrad (symmetric gauge), the Christoffel symbols and the spin connection
+   $\Omega_\mu=\tfrac14\omega_{\mu ab}\gamma^a\gamma^b$ are computed. The tetrad postulate is checked.
+2. **Conformal frame and canonical field.** In the conformal frame $\psi=a^{-3/2}\chi$, so the mass becomes
+   $a(\tau)m$. The canonical field is $\Psi=(\sqrt{-\gamma}\,e_0{}^0)^{1/2}\chi$, which gives
+   $L=\tfrac i2(\Psi^\dagger\Psi'-\Psi'^\dagger\Psi)-H$ exactly.
+3. **Interaction Hamiltonians.** $H_1$ and $H_2$ are written as Dirac bilinears and checked to be Hermitian.
+4. **Energy density.** This is the normal-observer energy density from the symmetric stress tensor,
+   $a^4\rho=\frac{1}{\sqrt{-\gamma}}\big[\tfrac i2(\Psi^\dagger\Psi'-\Psi'^\dagger\Psi)+\tfrac i2\Psi^\dagger(\Omega_0+\gamma^0\Omega_0\gamma^0)\Psi\big]$,
+   with $\Psi'$ taken from Hamilton's equations. For example, at $O(\psi)$ it is $3\psi\,ma\,\bar\Psi\Psi + 4\psi\,(\ldots)$.
+5. **Fermionic Wick contractions.** Spinor mode functions $u_A,u_B$ obey $iu_A'=Mu_A+ku_B$ and $iu_B'=ku_A-Mu_B$.
+   The spin sums $P$ and $N$ are complete, and the vacuum energy is the Dirac sea $-2\omega_k$. The fermion-loop sign
+   rule is checked against a brute-force Grassmann Wick expansion. The output uses $\mathrm{Re}/\mathrm{Im}$ of half
+   the operator orderings, and the integrands are reduced to rotation invariants such as $k^2$, $k\cdot q$,
+   $k\cdot\tilde h\cdot k$ and $\mathrm{tr}\,\tilde h\tilde h$.
+
+**Runtime.** Every term up to $O(h^2)$ takes seconds to about 3 minutes, except the double insertion
+$-\langle[[\rho_0,H_1],H_1]\rangle$, which takes about 8 minutes in the scalar family and longer in the tensor family.
 
 ## What changed in 0.3.3: compact Wick output
 
