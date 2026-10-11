@@ -1,8 +1,22 @@
-# InInAuto 0.3.1: from the action to renormalised numbers
+# InInAuto 0.3.2: from the action to renormalised numbers
 
 InInAuto takes the covariant action of a conformally coupled real scalar with a $\lambda\Phi^4/24$ term and returns the
 **renormalised in-in energy density** $\langle\rho\rangle$ through $O(\lambda h^2)$, as numbers, for scalar and tensor
 metric perturbations. It also still produces the exact symbolic Wick integrands of version 0.2.
+
+## What changed in 0.3.2
+
+The Wick output (`latex_result`, `sympy.latex`, Jupyter display) now renders in physics notation:
+
+| code | rendered |
+|---|---|
+| `U(phi, k, n, t)` and `Ub(phi, k, n, t)` | $u^{(n)}_k(t)$ and $u^{(n)*}_k(t)$, with primes for $n \le 3$ and $\lvert k+q\rvert$ for composite momenta |
+| `SP(k, k)` and `SP(k, q)` | $k^2$ and $(k\cdot q)$ |
+| `SQ(psi, q, n, t)` | $\tilde\psi^{(n)}(q,t)$, with tensor indices when present |
+| `Comp(k, i)`, `Occ`, `TT` | $k_i$, $n_k$, $\Lambda_{ij,lm}(k)$ |
+
+Measures, phases and deltas are typeset cleanly, and the integrand is bracketed. `str()` and the code form are
+unchanged.
 
 ## What changed in 0.3.1
 

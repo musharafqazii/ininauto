@@ -20,3 +20,15 @@ def test_latex_of_action_and_jets():
 def test_code_names_and_pickling_unchanged():
     assert str(G) == 'grad_phi_squared' and str(V) == 'v'
     assert pickle.loads(pickle.dumps(G * V)) == G * V
+
+
+def test_wick_kernels_render_as_mode_functions():
+    from ininauto.wick import U, Ub, SP, SQ, latex_result, WickResult, WickTerm
+    k1, q1, t = sp.symbols('k1 q1 tau')
+    phi_, psi_ = sp.Symbol('phi'), sp.Symbol('psi')
+    e = sp.latex(U(phi_, k1, 1, t)*Ub(phi_, -k1 - q1, 0, t)*SP(k1, k1)*SP(k1, q1)*SQ(psi_, q1, 0, t))
+    assert "u'_{k_{1}}" in e and r"u^{*}_{\left|k_{1} + q_{1}\right|}" in e
+    assert r"k_{1}^{2}" in e and r"k_{1}\cdot q_{1}" in e and r"\tilde{\psi}" in e
+    for bad in ('Ub', 'SP', 'SQ', 'operatorname'):
+        assert bad not in e
+    assert str(U(phi_, k1, 1, t)) == 'U(phi, k1, 1, tau)'

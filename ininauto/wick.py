@@ -24,14 +24,113 @@ from typing import Callable, Iterable
 import sympy as sy
 
 I = sy.I
-U = sy.Function("U")
-Ub = sy.Function("Ub")
-SQ = sy.Function("SQ")
-SP = sy.Function("SP")
-Comp = sy.Function("Comp")
-Occ = sy.Function("Occ")
-TT = sy.Function("TT")
-Cov = sy.Function("Cov")
+
+
+# ----------------------------------------------------------------------------------- printed building blocks
+# The Wick kernels are sympy functions with fixed argument conventions (documented on each class).  str() keeps the
+# code form, e.g. U(phi, k1, 1, tau); LaTeX shows the physics notation, e.g. u'_{k_1}(tau).
+def _tex(printer, x):
+    return printer._print(x)
+
+
+def _primes(n):
+    if getattr(n, "is_Integer", False) or isinstance(n, int):
+        n = int(n)
+        return "'" * n if n <= 3 else "^{(%d)}" % n
+    return "^{(%s)}" % sy.latex(n)
+
+
+def _mom(printer, k):
+    if k.is_Atom:
+        return _tex(printer, k)
+    if k.could_extract_minus_sign():          # u depends on |k| only: show |k1 + q1| rather than |-k1 - q1|
+        k = -k
+    return r"\left|" + _tex(printer, k) + r"\right|"
+
+
+def _species(printer, sp_):
+    return "" if str(sp_) == "phi" else "^{(" + _tex(printer, sp_) + ")}"
+
+
+def _power(body, exp):
+    return body if exp is None else r"\left[" + body + r"\right]^{" + str(exp) + "}"
+
+
+class U(sy.Function):
+    """U(species, k, n, t) = d^n u_k(t)/dt^n, the positive-frequency mode function of the species."""
+
+    def _latex(self, printer, exp=None):
+        sp_, k, n, t = self.args[:4]
+        body = "u" + _species(printer, sp_) + _primes(n) + "_{" + _mom(printer, k) + r"}\!\left(" + _tex(printer, t) + r"\right)"
+        return _power(body, exp)
+
+
+class Ub(sy.Function):
+    """Ub(species, k, n, t) = d^n u_k^*(t)/dt^n (complex-conjugate mode function)."""
+
+    def _latex(self, printer, exp=None):
+        sp_, k, n, t = self.args[:4]
+        body = "u" + _species(printer, sp_) + _primes(n) + "^{*}_{" + _mom(printer, k) + r"}\!\left(" + _tex(printer, t) + r"\right)"
+        return _power(body, exp)
+
+
+class SQ(sy.Function):
+    """SQ(source, q, n, t, *indices): Fourier amplitude of the classical source (psi or h_ij) at momentum q,
+    n-th time derivative, time t."""
+
+    def _latex(self, printer, exp=None):
+        lab, q, n, t = self.args[:4]
+        ind = "".join(_tex(printer, i) for i in self.args[4:])
+        body = (r"\tilde{" + _tex(printer, lab) + "}" + _primes(n) + ("_{" + ind + "}" if ind else "")
+                + r"\!\left(" + _tex(printer, q) + ", " + _tex(printer, t) + r"\right)")
+        return _power(body, exp)
+
+
+class SP(sy.Function):
+    """SP(p, q) = p . q (spatial scalar product of two formal momenta)."""
+
+    def _latex(self, printer, exp=None):
+        p, q = self.args
+        if p == q:
+            return _tex(printer, p) + "^{" + str(2 if exp is None else 2 * exp) + "}"
+        body = r"\left(" + _tex(printer, p) + r"\cdot " + _tex(printer, q) + r"\right)"
+        return body if exp is None else body + "^{" + str(exp) + "}"
+
+
+class Comp(sy.Function):
+    """Comp(p, i) = p_i, the i-th component of the momentum p."""
+
+    def _latex(self, printer, exp=None):
+        p, i = self.args
+        body = (_tex(printer, p) if p.is_Atom else r"\left(" + _tex(printer, p) + r"\right)") + "_{" + _tex(printer, i) + "}"
+        return _power(body, exp)
+
+
+class Occ(sy.Function):
+    """Occ(species, k) = n_k, the occupation number of the Gaussian state."""
+
+    def _latex(self, printer, exp=None):
+        sp_, k = self.args
+        return _power("n" + _species(printer, sp_) + "_{" + _mom(printer, k) + "}", exp)
+
+
+class TT(sy.Function):
+    """TT(k, i, j, l, m) = Lambda_{ij,lm}(k), the transverse-traceless projector."""
+
+    def _latex(self, printer, exp=None):
+        ind = [_tex(printer, i) for i in self.args[1:]]
+        body = r"\Lambda_{" + "".join(ind[:2]) + "," + "".join(ind[2:]) + r"}\!\left(" + _tex(printer, self.args[0]) + r"\right)"
+        return _power(body, exp)
+
+
+class Cov(sy.Function):
+    """Cov(species, k, *indices, D, n_a, n_b, t_a, t_b): generic (non-TT) tensor covariance, to be supplied by a
+    kernel."""
+
+    def _latex(self, printer, exp=None):
+        body = (r"\mathcal{C}^{(" + _tex(printer, self.args[0]) + r")}\!\left("
+                + ", ".join(_tex(printer, a_) for a_ in self.args[1:]) + r"\right)")
+        return _power(body, exp)
 
 
 def _sym(x):
@@ -532,15 +631,23 @@ def inin_second_order(rho0, rho1, rho2, h1_at_t1, h2_at_t1, h1_at_t2,
 
 def latex_result(res: WickResult) -> str:
     """LaTeX with explicit formal integration measures, phases, and residual deltas."""
-    chunks=[]
+    chunks = []
     for term in res.terms:
-        measure=" ".join(r"\int\frac{d^3%s}{(2\pi)^3}" % sy.latex(v)
-                         for v in term.loops+term.sources)
-        phase=" ".join(r"e^{i\,(%s)\cdot %s}"%(sy.latex(p),sy.latex(x))
-                       for x,p in term.phase if p!=0)
-        delta=" ".join(r"(2\pi)^3\delta^{(3)}\left(%s\right)"%sy.latex(p)
-                       for p in term.deltas)
-        chunks.append(measure+" "+phase+" "+delta+" "+sy.latex(term.integrand))
+        measure = r"\,".join(r"\int\!\frac{d^3%s}{(2\pi)^3}" % sy.latex(v) for v in term.loops + term.sources)
+        phases = []
+        for x, p in term.phase:
+            if p == 0:
+                continue
+            pt = sy.latex(p)
+            if not p.is_Atom:
+                pt = r"\left(" + pt + r"\right)"
+            phases.append(r"e^{i\,%s\cdot %s}" % (pt, sy.latex(x)))
+        delta = r"\,".join(r"(2\pi)^3\delta^{(3)}\!\left(%s\right)" % sy.latex(p) for p in term.deltas)
+        body = sy.latex(term.integrand)
+        if isinstance(term.integrand, sy.Add):
+            body = r"\left[" + body + r"\right]"
+        pieces = [t for t in (measure, r"\,".join(phases), delta, body) if t]
+        chunks.append(r"\,".join(pieces))
     return " + ".join(chunks) if chunks else "0"
 
 
