@@ -3,8 +3,8 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 [project]
 name = "ininauto-qft"
-version = "0.6.0"
-description = "Action-to-number in-in solver: symbolic derivation, verified kernels, renormalised energy density"
+version = "0.7.0"
+description = "In-in perturbation theory on perturbed FLRW from the action: scalar, fermionic and Higgs-portal sectors"
 requires-python = ">=3.10"
 dependencies = ["sympy>=1.12", "numpy>=1.23"]
 [project.optional-dependencies]
@@ -12,3 +12,6 @@ plots = ["matplotlib>=3.6"]
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["ininauto*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

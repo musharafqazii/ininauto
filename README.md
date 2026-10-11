@@ -1,10 +1,30 @@
-# InInAuto 0.5.0: from the action to renormalised numbers
+# InInAuto 0.7.0: from the action to renormalised numbers
 
 InInAuto takes the covariant action of a conformally coupled real scalar with a $\lambda\Phi^4/24$ term and returns the
 **renormalised in-in energy density** $\langle\rho\rangle$ through $O(\lambda h^2)$, as numbers, for scalar and tensor
 metric perturbations. It also still produces the exact symbolic Wick integrands of version 0.2.
 
-## New in 0.6.0: Higgs portal (`ininauto.portal`)
+## Package layout (0.7.0)
+
+```
+ininauto/
+  core/            shared: symbols (jets, eps, tau, a), geometry (Newtonian gauge / TT, O(eps^2)), wick (bosonic Wick engine)
+  scalar/          conformal scalar Phi with lambda Phi^4:
+                   action, expansion, hamiltonian, stress, operators, inin, pipeline, full, adiabatic,
+                   evaluate, bridge, counterterm_operators, renormalization, free_modes, report, numerics/
+  fermionic/       free Dirac (dirac.py) and Majorana (majorana.py) fields, fermion-loop Wick contractions (wick.py)
+  higgs_portal/    dark scalar + Higgs-like scalar, (lambda_p/4) h^2 Phi^2: action, fields, system
+tests/             core/, scalar/, fermionic/, higgs_portal/, test_layout.py
+examples/scalar/   run_example.py, run_evaluate.py, run_full.py
+```
+
+Dependencies only point downwards: `scalar` and `fermionic` use `core`; `higgs_portal` uses `core` and `scalar`.
+`from ininauto import *` still gives the whole user-facing API, `ininauto.__version__` gives the version, and
+the pre-0.7 module paths (`ininauto.wick`, `ininauto.action`, `ininauto.dirac`, `ininauto.portal`, ...) still import
+as aliases of the new modules, so existing notebooks keep working. The Higgs-portal builder is now
+`portal_system(S, family)`; `higgs_portal(S, family)` still works (the package is callable).
+
+## New in 0.6.0: Higgs portal (`ininauto.higgs_portal`)
 
 Dark conformal scalar Phi plus a Higgs-like scalar h (both xi = 1/6), coupled by V = (lambda_p/4) h^2 Phi^2.
 The only input is the action:
@@ -15,7 +35,7 @@ from ininauto import *
 m, mh, lam, lp = sp.symbols('m m_h lambda lambda_p', real=True)
 S = -KIN/2 - m**2*PHI2/2 - RPHI2/12 - lam*PHI4/24 \
     -KINH/2 - mh**2*H2/2 - RH2/12 - lp*H2PHI2/4
-sys = higgs_portal(S, 'scalar')        # or 'tensor' (TT); through O(eps^2)
+sys = portal_system(S, 'scalar')       # or 'tensor' (TT); through O(eps^2)
 sys.H[(0,1,0)], sys.rho[(0,1,0)]       # keys (l, p, j): self-coupling, portal, metric order
 for label, res in portal_diagrams(sys, (0,1,0)):   # all O(lambda_p) in-in terms
     print(label); display(Math(latex_result(res)))
@@ -35,7 +55,7 @@ same tetrad, spin connection and canonical structure as the Dirac field, with $H
 $\rho_M=\tfrac12\rho_D$.
 
 ```python
-from ininauto.dirac import MajoranaField, majorana_inin_term
+from ininauto.fermionic import MajoranaField, majorana_inin_term
 M = MajoranaField("scalar", order=2)               # or "tensor"
 display(Math(M.clifford(M.H(1))))
 T = majorana_inin_term(M, 0, (1,))                 # explicit Majorana Wick contractions
@@ -56,13 +76,13 @@ a Majorana field. All perfect matchings of the legs are included, with signs $(-
 The two Wick engines are independent, so this identity tests both. For the slow double insertion,
 `majorana_inin_term(M, 0, (1, 1), method="half_dirac")` gives the same result through the Dirac engine.
 
-## New in 0.4.0: free Dirac field (`ininauto.dirac`)
+## New in 0.4.0: free Dirac field (`ininauto.fermionic`)
 
 The free Dirac field is handled on the same two metric families: scalar (Newtonian gauge, equal potentials) and
 tensor (TT). Everything is explicit up to $O(h^2)$.
 
 ```python
-from ininauto.dirac import DiracField, inin_term
+from ininauto.fermionic import DiracField, inin_term
 D = DiracField("scalar", order=2)              # or "tensor"
 display(Math(D.clifford(D.H(1))))              # Psi^dag [ sum c_A Gamma_A ] Psi
 display(Math(D.clifford(D.rho_n(2))))          # comoving energy density a^4 rho at eps^2
@@ -108,7 +128,7 @@ following steps are applied.
 
 Example: the first-order commutator $-i\langle[\rho_0,H_1]\rangle$ goes from 50 terms to
 $-\frac{2}{a^4}\mathrm{Im}\int\!\int e^{iq\cdot x}\{\ldots\}$ with 6 terms. Every rewriting is checked numerically
-in `tests/test_wick_simplify.py`, and the conjugate pairing is verified algebraically each time. If that check
+in `tests/core/test_wick_simplify.py`, and the conjugate pairing is verified algebraically each time. If that check
 fails, the pairing is skipped.
 
 ## What changed in 0.3.2
@@ -135,7 +155,7 @@ are unchanged.
 
 ## What changed from 0.2
 
-**Bug fixes**, each with a regression test in `tests/test_fixes.py`:
+**Bug fixes**, each with a regression test in `tests/scalar/test_fixes.py`:
 
 1. `wick.dot` overwrote its own loop variable. Every scalar product of composite momenta was wrong; for example $(q-k)^2$
    came out as $k^2-k\cdot q$. This affected every gradient term carried by a shifted leg.
@@ -181,7 +201,7 @@ runs are cached under `<output>/runs/`, so repeating a call only recomputes what
 
 1. **Symbolic derivation from the action**: geometry, reduced Lagrangian, Legendre transform, canonical Hamiltonian and
    normal-observer (Hilbert) energy density, for both metric families. This is unchanged from 0.2.
-2. **Verification against the action** (`ininauto.bridge`). Every kernel used by the numerical back end is re-derived and
+2. **Verification against the action** (`ininauto.scalar.bridge`). Every kernel used by the numerical back end is re-derived and
    compared exactly. The numerics do not run if anything differs.
    - The mode operators $D_0$, $\mathcal P_1$ and $\mathcal P_2$ come from the Euler–Lagrange equation of the reduced
      Lagrangian (`sympy.euler_equations` on explicit fields), projected as the engine uses them: the first-order side band,
@@ -189,7 +209,7 @@ runs are cached under `<output>/runs/`, so repeating a call only recomputes what
    - The energy density in velocity variables, at orders $\epsilon^{0,1,2}$.
    - The quartic vertex and its determinant factors $j_1$, $j_2$, which are the Hartree tadpoles $\Sigma_{1,2}$.
    - $\xi=1/6$ and $m^2$.
-3. **Numerics** (`ininauto.numerics`). For each Fourier mode $q$ of the metric perturbation, the engine integrates the
+3. **Numerics** (`ininauto.scalar.numerics`). For each Fourier mode $q$ of the metric perturbation, the engine integrates the
    retarded hierarchy $F_k=u+\epsilon v+\epsilon^2 z+\lambda(\ell+\epsilon w+\epsilon^2 r)$ in the in-vacuum. This is
    equivalent to the canonical in-in series of nested commutators. It then evaluates
    $\langle\rho\rangle=\sum_k\mathcal E(F_k,F_k)$ and renormalises:
