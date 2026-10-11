@@ -1,8 +1,29 @@
-# InInAuto 0.3.2: from the action to renormalised numbers
+# InInAuto 0.3.3: from the action to renormalised numbers
 
 InInAuto takes the covariant action of a conformally coupled real scalar with a $\lambda\Phi^4/24$ term and returns the
 **renormalised in-in energy density** $\langle\rho\rangle$ through $O(\lambda h^2)$, as numbers, for scalar and tensor
 metric perturbations. It also still produces the exact symbolic Wick integrands of version 0.2.
+
+## What changed in 0.3.3: compact Wick output
+
+`latex_result(res)` now prints an exact, much shorter form of a Wick result, and Jupyter displays a `WickResult`
+directly in this form (`display(res)`). Use `latex_result(res, simplify=False)` for the raw term list. The
+following steps are applied.
+
+1. **Mode functions depend on $|p|$.** For example, $u_{-k-q}$ is printed as $u_{|k+q|}$.
+2. **Momenta are relabelled to one canonical form.** Integration momenta are dummy variables
+   ($k\to\pm k+\sum c_j q_j$, loop momenta can be exchanged), so equal integrands are combined.
+3. **Conjugate pairs are combined.** For real sources ($\tilde\psi(-q)=\tilde\psi(q)^*$), complex-conjugate pairs
+   become $2\,\mathrm{Re}[\ldots]$, or $\mathrm{Im}[\ldots]$ when the factor is imaginary.
+4. **TT identities are applied.** $h_{ii}=0$ and $q_ih_{ij}(q)=0$ are used, and dummy indices are renamed
+   $i, j, \ldots$.
+5. **The result is collected and factored.** Terms are collected by their product of mode functions, with factored
+   coefficients. Common factors such as $1/a^4$ are pulled out of the integral, and $u\,u^*$ is printed as $|u|^2$.
+
+Example: the first-order commutator $-i\langle[\rho_0,H_1]\rangle$ goes from 50 terms to
+$-\frac{2}{a^4}\mathrm{Im}\int\!\int e^{iq\cdot x}\{\ldots\}$ with 6 terms. Every rewriting is checked numerically
+in `tests/test_wick_simplify.py`, and the conjugate pairing is verified algebraically each time. If that check
+fails, the pairing is skipped.
 
 ## What changed in 0.3.2
 

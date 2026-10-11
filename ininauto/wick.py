@@ -30,6 +30,11 @@ I = sy.I
 # The Wick kernels are sympy functions with fixed argument conventions (documented on each class).  str() keeps the
 # code form, e.g. U(phi, k1, 1, tau); LaTeX shows the physics notation, e.g. u'_{k_1}(tau).
 def _tex(printer, x):
+    import re
+    if isinstance(x, sy.Symbol):
+        mt = re.fullmatch(r"_(\w+?)_op(\d+)", x.name)     # dummy index i at operator n  ->  i_n
+        if mt:
+            return "%s_{%s}" % (mt.group(1), mt.group(2))
     return printer._print(x)
 
 
@@ -102,7 +107,7 @@ class Comp(sy.Function):
 
     def _latex(self, printer, exp=None):
         p, i = self.args
-        body = (_tex(printer, p) if p.is_Atom else r"\left(" + _tex(printer, p) + r"\right)") + "_{" + _tex(printer, i) + "}"
+        body = r"\left(" + _tex(printer, p) + r"\right)_{" + _tex(printer, i) + "}"
         return _power(body, exp)
 
 
@@ -475,6 +480,9 @@ class WickResult:
                 result.append(WickTerm(inte,loops,sources,phase,deltas))
         return WickResult(tuple(result))
 
+    def _repr_latex_(self):
+        return "$\\displaystyle " + latex_result(self) + "$"
+
     def show(self):
         if not self.terms:
             print("0")
@@ -629,8 +637,15 @@ def inin_second_order(rho0, rho1, rho2, h1_at_t1, h2_at_t1, h1_at_t2,
     return out
 
 
-def latex_result(res: WickResult) -> str:
-    """LaTeX with explicit formal integration measures, phases, and residual deltas."""
+def latex_result(res: WickResult, simplify=True, real_sources=True) -> str:
+    """LaTeX of a Wick result.
+
+    simplify=True (default): the exact, compact form of latex_simplified -- mode functions depend on |p|,
+    integration momenta relabelled to one canonical form, equal integrands combined, common factors pulled out,
+    complex-conjugate pairs (real sources) written as 2 Re[...] or Im[...].
+    simplify=False: every term as produced by Wick's theorem."""
+    if simplify:
+        return latex_simplified(res, real_sources=real_sources)
     chunks = []
     for term in res.terms:
         measure = r"\,".join(r"\int\!\frac{d^3%s}{(2\pi)^3}" % sy.latex(v) for v in term.loops + term.sources)
@@ -651,6 +666,297 @@ def latex_result(res: WickResult) -> str:
     return " + ".join(chunks) if chunks else "0"
 
 
+# ----------------------------------------------------------------------------------- readable (simplified) form
+# A Wick result is a sum of momentum integrals.  Three exact rewritings make it much shorter:
+#   1. mode functions depend on |p| only (isotropic Gaussian state): u_{-k-q} = u_{|k+q|};
+#   2. every loop momentum is a dummy integration variable over all of R^3: each term may be relabelled
+#      (k -> -k, and for one-loop terms k -> -k - s with s a source momentum of that term), and all terms are
+#      brought to one canonical labelling, so that equal integrands combine;
+#   3. for real classical sources (psi~(-q) = psi~(q)^*), terms come in complex-conjugate pairs; the sum is written
+#      as 2 Re[...] over one member of each pair.  This step is verified term by term and skipped if it fails.
+# Then each integrand is collected by its product of mode functions and sources, with factored coefficients.
+
+def _momentum_args(expr):
+    out = []
+    for f in expr.atoms(U, Ub, Occ):
+        out.append(f.args[1])
+    return out
+
+
+def _canon_modes(expr):
+    """u_p -> u_{canonical sign of p} (depends on |p| only)."""
+    def fix(cls):
+        def rep(*args):
+            sp_, p = args[0], args[1]
+            p = sy.expand(p)
+            if p.could_extract_minus_sign():
+                p = sy.expand(-p)
+            return cls(sp_, p, *args[2:])
+        return rep
+    expr = expr.replace(U, fix(U)).replace(Ub, fix(Ub))
+    expr = expr.replace(Comp, lambda p, i: sy.expand(sum(c * Comp(v, i) for v, c in sy.expand(p).as_coefficients_dict().items()))
+                        if isinstance(sy.expand(p), sy.Add) or sy.expand(p).could_extract_minus_sign() else Comp(p, i))
+    expr = expr.replace(Occ, lambda sp_, p: Occ(sp_, sy.expand(-p) if sy.expand(p).could_extract_minus_sign() else sy.expand(p)))
+    return expr
+
+
+def _relabel(expr, rule):
+    """Apply a linear change of integration variables to every momentum-carrying object."""
+    def mom(p):
+        return sy.expand(p.subs(rule, simultaneous=True))
+    expr = expr.replace(U, lambda s_, p, *r: U(s_, mom(p), *r))
+    expr = expr.replace(Ub, lambda s_, p, *r: Ub(s_, mom(p), *r))
+    expr = expr.replace(Occ, lambda s_, p: Occ(s_, mom(p)))
+    expr = expr.replace(SP, lambda p, q: dot(mom(p), mom(q)))
+    expr = expr.replace(Comp, lambda p, i: sy.expand(sum(c * Comp(v, i) for v, c in sy.expand(mom(p)).as_coefficients_dict().items())))
+    expr = expr.replace(TT, lambda p, *r: TT(mom(p), *r))
+    expr = expr.replace(SQ, lambda lab, q, *r: SQ(lab, mom(q), *r))
+    return _canon_modes(sy.expand(expr))
+
+
+def _mode_key(term):
+    """Product of mode functions / sources of one monomial (its 'shape') and a sortable key."""
+    shape = sy.Mul(*[f for f in sy.Mul.make_args(term) if f.as_base_exp()[0].func in (U, Ub, SQ, Occ, TT, Cov)])
+    return shape
+
+
+def _variants(term, loops, sources):
+    """Relabellings of one monomial that leave its integral unchanged.  Every loop momentum may change sign; a single
+    loop momentum k may also be shifted, k -> +-k + sum_j c_j q_j with c_j in -2..2 (a fixed window, the same for every
+    monomial, so equal integrals reach the same canonical representative)."""
+    from itertools import product as _prod, permutations as _perm
+    rules = [{}]
+    for k in loops:
+        rules = rules + [{**r, k: -k} for r in rules]
+    if 1 < len(loops) <= 3:                               # loop momenta are interchangeable dummy variables
+        rules = [{k: r.get(k2, k2) for k, k2 in zip(loops, perm)} for perm in _perm(loops) for r in rules]
+    if len(loops) == 1 and sources:
+        k = loops[0]
+        rules = []
+        for sign in (1, -1):
+            for cs in _prod(range(-2, 3), repeat=len(sources)):
+                rules.append({k: sign * k + sum(c * q for c, q in zip(cs, sources))})
+    out = []
+    for r in rules:
+        out.append(term if all(v == key for key, v in r.items()) else _relabel(term, r))
+    return out
+
+
+def _shape_key(v):
+    """Sort key of a variant: simplest momentum arguments first (fewest terms), then a fixed string order."""
+    shape = _mode_key(sy.Add.make_args(sy.expand(v))[0])      # all monomials of a variant share one shape
+    args = [f.args[1] for f in shape.atoms(U, Ub, Occ)] + [f.args[1] for f in shape.atoms(SQ)]
+    complexity = sum(len(sy.Add.make_args(sy.expand(p))) + sum(abs(c) for c in sy.expand(p).as_coefficients_dict().values())
+                     for p in args)
+    return (complexity, str(sorted(str(f) for f in sy.Mul.make_args(shape))))
+
+
+_IDX_NAMES = sy.symbols("i j l m n r s")
+
+
+def _index_symbols(m):
+    out = set()
+    for f in m.atoms(Comp):
+        out.add(f.args[1])
+    for f in m.atoms(SQ):
+        out.update(f.args[4:])
+    for f in m.atoms(TT):
+        out.update(f.args[1:])
+    return out
+
+
+def _rename_dummy_indices(m):
+    """Dummy spatial indices of one monomial renamed i, j, l, ... in a canonical order."""
+    idx = _index_symbols(m)
+    if not idx:
+        return m
+    blank = sy.Symbol("_")
+    facs = sorted(sy.Mul.make_args(m), key=lambda f: str(f.xreplace({i: blank for i in idx})))
+    order = []
+    for f in facs:
+        for a_ in sy.preorder_traversal(f):
+            if a_ in idx and a_ not in order:
+                order.append(a_)
+    return m.xreplace(dict(zip(order, _IDX_NAMES)))
+
+
+def _canonical_expr(expr, loops, sources):
+    """One representative per monomial under the relabellings of _variants (simplest momenta, fixed order);
+    transverse-traceless identities of tensor sources applied and dummy indices renamed."""
+    tot = sy.S.Zero
+    for m in sy.Add.make_args(sy.expand(_canon_modes(expr))):
+        vs = [((_shape_key(v), str(v)), v) for v in _variants(m, loops, sources)]
+        tot += min(vs, key=lambda kv: kv[0])[1]
+    tot = contract_indices(sy.expand(tot))
+    return sy.expand(sy.Add(*[_rename_dummy_indices(m) for m in sy.Add.make_args(tot)]))
+
+
+def _conjugate_expr(expr, sources):
+    """Complex conjugate for real sources (psi~(q)^* = psi~(-q)), then q -> -q to restore the phase e^{i q.x}."""
+    out = sy.S.Zero
+    for m in sy.Add.make_args(sy.expand(expr)):
+        c, rest = m.as_coeff_Mul()
+        rest = rest.xreplace({f: (Ub(*f.args) if f.func == U else U(*f.args)) for f in rest.atoms(U, Ub)})
+        rest = rest.replace(SQ, lambda lab, q, *r: SQ(lab, -q, *r))
+        out += sy.conjugate(c) * rest.subs(sy.I, -sy.I)
+    return _relabel(out, {q: -q for q in sources})
+
+
+def _by_shape(expr):
+    g = defaultdict(lambda: sy.S.Zero)
+    for m in sy.Add.make_args(sy.expand(expr)):
+        sh = _mode_key(m)
+        g[sh] += sy.cancel(m / sh)
+    return g
+
+
+@dataclass(frozen=True)
+class SimplifiedTerm:
+    term: WickTerm
+    plain: sy.Expr         # self-conjugate (manifestly real) part of the integrand
+    paired: sy.Expr        # one member of each complex-conjugate pair: contributes 2 Re[...]
+
+    @property
+    def body(self):
+        return self.plain + 2 * self.paired
+
+
+def simplify_result(res: WickResult, real_sources=True):
+    """Exact, shorter form of a Wick result (see the comment block above); returns a list of SimplifiedTerm.
+    The integral of each term equals  measure * phase * (plain) + 2 Re[ measure * phase * (paired) ]."""
+    out = []
+    for t in res.terms:
+        loops, sources = list(t.loops), list(t.sources)
+        total = _canonical_expr(t.integrand, loops, sources)
+        plain, paired = total, sy.S.Zero
+        if real_sources and not t.deltas and total != 0:
+            groups = _by_shape(total)
+            sc, pr, used, ok = sy.S.Zero, sy.S.Zero, set(), True
+            for sh in sorted(groups, key=lambda s_: _shape_key(s_)):
+                if sh in used:
+                    continue
+                part = groups[sh] * sh
+                img = _canonical_expr(_conjugate_expr(part, sources), loops, sources)
+                img_shapes = set(_by_shape(img))
+                if img_shapes == {sh}:
+                    sc += part
+                    used.add(sh)
+                elif len(img_shapes) == 1 and next(iter(img_shapes)) in groups:
+                    pr += part
+                    used.add(sh)
+                    used |= img_shapes
+                else:
+                    ok = False
+                    break
+            if ok:
+                check = _canonical_expr(sc + pr + _conjugate_expr(pr, sources), loops, sources)
+                check_sc = _canonical_expr(_conjugate_expr(sc, sources), loops, sources)
+                if sy.expand(check - total) == 0 and sy.expand(check_sc - sc) == 0:
+                    plain, paired = sy.expand(sc), sy.expand(pr)
+        out.append(SimplifiedTerm(t, plain, paired))
+    return out
+
+
+def _collected(body, momenta=()):
+    """(common factor, [(coefficient, shape)]): body = common * sum coefficient * shape, coefficients factored.
+    Only factors independent of the integration momenta are pulled out of the integral."""
+    groups = defaultdict(lambda: sy.S.Zero)
+    for m in sy.Add.make_args(sy.expand(body)):
+        shape = _mode_key(m)
+        groups[shape] += sy.cancel(m / shape)
+    if not groups:
+        return sy.S.One, []
+    ft = sy.factor_terms(sy.Add(*groups.values()))
+    mom = set(momenta)
+    common = sy.Mul(*[f for f in sy.Mul.make_args(ft)
+                      if not isinstance(f, sy.Add) and not (f.free_symbols & mom)])
+    if common == 0:
+        common = sy.S.One
+    items = [(sy.factor(sy.cancel(c / common)), sh) for sh, c in groups.items()]
+    items.sort(key=lambda it: _shape_key(it[1]))
+    return common, items
+
+
+def _latex_shape(shape):
+    """LaTeX of a product of mode functions/sources; u_p(t) u_p^*(t) with equal arguments is written |u_p(t)|^2."""
+    pw = {}
+    for f in sy.Mul.make_args(shape):
+        b, e = f.as_base_exp()
+        pw[b] = pw.get(b, 0) + int(e)
+    parts = []
+    for b in sorted(list(pw), key=str):
+        if b.func == U:
+            partner = Ub(*b.args)
+            n = min(pw[b], pw.get(partner, 0))
+            if n:
+                body = sy.latex(b)
+                parts.append(r"\left|" + body + r"\right|^{" + str(2 * n) + "}")
+                pw[b] -= n
+                pw[partner] -= n
+    for b in sorted(pw, key=lambda f: (0 if f.func == SQ else 1, str(f))):
+        if pw[b]:
+            parts.append(sy.latex(b**pw[b]))
+    return r"\,".join(parts)
+
+
+def _latex_items(items):
+    pieces = []
+    for coef, shape in items:
+        if coef == 1:
+            ct = ""
+        elif coef == -1:
+            ct = "-"
+        else:
+            ct = sy.latex(coef)
+            if isinstance(coef, sy.Add):
+                ct = r"\left(" + ct + r"\right)"
+            ct += r"\,"
+        pieces.append(ct + _latex_shape(shape))
+    if len(pieces) > 3:
+        s_ = r"\begin{aligned}&" + r" \\ &+ ".join(pieces) + r"\end{aligned}"
+    else:
+        s_ = " + ".join(pieces)
+    return s_.replace("+ -", "- ")
+
+
+def latex_simplified(res: WickResult, real_sources=True) -> str:
+    """LaTeX of simplify_result: measures and phase written once, common factors pulled out, the integrand
+    collected by its product of mode functions; conjugate pairs written as 2 Re[...] (or 2 Im[...])."""
+    chunks = []
+    for st in simplify_result(res, real_sources):
+        t = st.term
+        measure = r"\,".join(r"\int\!\frac{d^3%s}{(2\pi)^3}" % sy.latex(v) for v in t.loops + t.sources)
+        phases = []
+        for x, p in t.phase:
+            if p == 0:
+                continue
+            pt = sy.latex(p) if p.is_Atom else r"\left(" + sy.latex(p) + r"\right)"
+            phases.append(r"e^{i\,%s\cdot %s}" % (pt, sy.latex(x)))
+        delta = r"\,".join(r"(2\pi)^3\delta^{(3)}\!\left(%s\right)" % sy.latex(p) for p in t.deltas)
+        head = r"\,".join(x for x in (measure, r"\,".join(phases), delta) if x)
+
+        def block(common, items):
+            pre = "" if common == 1 else (sy.latex(common) + r"\,")
+            return pre + head + r"\,\left\{" + _latex_items(items) + r"\right\}"
+        if st.plain != 0:
+            chunks.append(block(*_collected(st.plain, t.loops + t.sources)))
+        if st.paired != 0:
+            common, items = _collected(st.paired, t.loops + t.sources)
+            c_re = sy.simplify(common / sy.I)
+            # background functions a(t), M^2(t) and the coupling are real
+            probe = c_re.xreplace({f: sy.Dummy(real=True, positive=True) for f in c_re.atoms(sy.Function)})
+            probe = probe.xreplace({x_: sy.Dummy(real=True) for x_ in probe.free_symbols if x_.is_real is None})
+            if sy.im(probe) == 0:
+                # 2 Re[i c B] = -2 c Im[B]
+                pre = sy.latex(-2 * c_re)
+                chunks.append(pre + r"\,\mathrm{Im}\left[" + block(sy.S.One, items) + r"\right]")
+            else:
+                chunks.append(r"2\,\mathrm{Re}\left[" + block(common, items) + r"\right]")
+    out = " + ".join(chunks) if chunks else "0"
+    return out.replace("+ -", "- ")
+
+
 __all__=["F","S","anti","local","vertex","dot","contract_indices","GaussianState",
          "wick_vev","nested_commutator_vev","inin_second_order","latex_result",
-         "WickTerm","WickResult","U","Ub","SQ","SP","Comp","Occ","TT","Cov"]
+         "WickTerm","WickResult","U","Ub","SQ","SP","Comp","Occ","TT","Cov",
+         "simplify_result","latex_simplified","SimplifiedTerm"]
